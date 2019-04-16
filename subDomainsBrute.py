@@ -14,17 +14,19 @@ from gevent.queue import PriorityQueue
 import re
 import dns.resolver
 import time
+from time import ctime
 import signal
 import os
 import glob
 from lib.cmdline import parse_args
-from lib.common import is_intranet, load_dns_servers, load_next_sub, print_msg, get_out_file_name, \
-    user_abort
+from lib.common import is_intranet, load_dns_servers, load_next_sub, print_msg, get_out_file_name, user_abort
+from lib.sqlite_interface import SqliteInterface
+from lib.MultiThreadSqlite import MultiThreadSqlite
 
 
 class SubNameBrute:
     def __init__(self, target, options, process_num, dns_servers, next_subs,
-                 scan_count, found_count, queue_size_list, tmp_dir):
+                 scan_count, found_count, queue_size_list, tmp_dir, db_tool):
         self.target = target.strip()
         self.options = options
         self.process_num = process_num
@@ -50,6 +52,7 @@ class SubNameBrute:
         self.ex_resolver.nameservers = dns_servers
         self.local_time = time.time()
         self.outfile = open('%s/%s_part_%s.txt' % (tmp_dir, target, process_num), 'w')
+        self.db_tool = db_tool
 
     def _load_sub_names(self):
         if self.options.full_scan and self.options.file == 'subnames.txt':
@@ -189,6 +192,9 @@ class SubNameBrute:
 
                     self.outfile.write(cur_sub_domain.ljust(30) + '\t' + ips + '\n')
                     self.outfile.flush()
+                    # save into sqlite
+                    # self.db_tool.save_subdomain(self.target, cur_sub_domain, ips, ctime())
+                    self.db_tool.execute("""insert into subdomain_info (domain, subdomain, ips, create_time) VALUES('%s','%s','%s','%s')""" % (self.target, cur_sub_domain, ips, ctime()))
                     try:
                         self.resolvers[j].query('lijiejietest.' + cur_sub_domain)
                     except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer) as e:
@@ -212,12 +218,12 @@ class SubNameBrute:
 
 
 def run_process(target, options, process_num, dns_servers, next_subs, scan_count, found_count, queue_size_list,
-                tmp_dir):
+                tmp_dir, db_tool):
     signal.signal(signal.SIGINT, user_abort)
     s = SubNameBrute(target=target, options=options, process_num=process_num,
                      dns_servers=dns_servers, next_subs=next_subs,
                      scan_count=scan_count, found_count=found_count, queue_size_list=queue_size_list,
-                     tmp_dir=tmp_dir)
+                     tmp_dir=tmp_dir, db_tool=db_tool)
     s.run()
 
 
@@ -236,7 +242,7 @@ if __name__ == '__main__':
     scan_count = multiprocessing.Value('i', 0)
     found_count = multiprocessing.Value('i', 0)
     queue_size_list = multiprocessing.Array('i', options.process)
-
+    db_tool = MultiThreadSqlite()
     try:
         print '[+] Init %s scan process.' % options.process
         for process_num in range(options.process):
@@ -244,7 +250,7 @@ if __name__ == '__main__':
                                         args=(args[0], options, process_num,
                                               dns_servers, next_subs,
                                               scan_count, found_count,queue_size_list,
-                                              tmp_dir)
+                                              tmp_dir, db_tool)
                                         )
             all_process.append(p)
             p.start()
@@ -270,6 +276,10 @@ if __name__ == '__main__':
     msg = '[+] All Done. %s found, %s scanned in %.1f seconds.' % (
         found_count.value, scan_count.value, time.time() - start_time)
     print_msg(msg, line_feed=True)
+    # close db connection
+    # db_tool.drop_connection()
+    db_tool.commit()
+    db_tool.close()
     out_file_name = get_out_file_name(args[0], options)
     with open(out_file_name, 'w') as f:
         for _file in glob.glob(tmp_dir + '/*.txt'):
