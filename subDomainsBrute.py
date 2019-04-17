@@ -19,8 +19,6 @@ import os
 import glob
 from lib.cmdline import parse_args
 from lib.common import is_intranet, load_dns_servers, load_next_sub, print_msg, get_out_file_name, user_abort
-from lib.sqlite_interface import SqliteInterface
-from lib.MultiThreadSqlite import MultiThreadSqlite
 from lib.mongo_db import connectiondb
 
 
