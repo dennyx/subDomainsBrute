@@ -14,7 +14,6 @@ from gevent.queue import PriorityQueue
 import re
 import dns.resolver
 import time
-from time import ctime
 import signal
 import os
 import glob
@@ -22,6 +21,7 @@ from lib.cmdline import parse_args
 from lib.common import is_intranet, load_dns_servers, load_next_sub, print_msg, get_out_file_name, user_abort
 from lib.sqlite_interface import SqliteInterface
 from lib.MultiThreadSqlite import MultiThreadSqlite
+from lib.mongo_db import connectiondb
 
 
 class SubNameBrute:
@@ -192,9 +192,13 @@ class SubNameBrute:
 
                     self.outfile.write(cur_sub_domain.ljust(30) + '\t' + ips + '\n')
                     self.outfile.flush()
-                    # save into sqlite
-                    # self.db_tool.save_subdomain(self.target, cur_sub_domain, ips, ctime())
-                    self.db_tool.execute("""insert into subdomain_info (domain, subdomain, ips, create_time) VALUES('%s','%s','%s','%s')""" % (self.target, cur_sub_domain, ips, ctime()))
+                    scan_result = {
+                        "domain": self.target,
+                        "subdomain": cur_sub_domain,
+                        "ips": ips,
+                        "date": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                    }
+                    connectiondb().insert(scan_result)
                     try:
                         self.resolvers[j].query('lijiejietest.' + cur_sub_domain)
                     except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer) as e:
@@ -242,7 +246,7 @@ if __name__ == '__main__':
     scan_count = multiprocessing.Value('i', 0)
     found_count = multiprocessing.Value('i', 0)
     queue_size_list = multiprocessing.Array('i', options.process)
-    db_tool = MultiThreadSqlite()
+    db_tool = ''
     try:
         print '[+] Init %s scan process.' % options.process
         for process_num in range(options.process):
@@ -276,10 +280,6 @@ if __name__ == '__main__':
     msg = '[+] All Done. %s found, %s scanned in %.1f seconds.' % (
         found_count.value, scan_count.value, time.time() - start_time)
     print_msg(msg, line_feed=True)
-    # close db connection
-    # db_tool.drop_connection()
-    db_tool.commit()
-    db_tool.close()
     out_file_name = get_out_file_name(args[0], options)
     with open(out_file_name, 'w') as f:
         for _file in glob.glob(tmp_dir + '/*.txt'):
