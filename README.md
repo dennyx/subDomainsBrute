@@ -17,8 +17,12 @@ You can get older versions via [https://github.com/lijiejie/subDomainsBrute/rele
 
 
 ## Dependencies ##
-> pip install dnspython gevent
 
+```shell
+pip install dnspython gevent
+docker run -d -p27017:27017 mongo
+```
+* mongodb client https://robomongo.org/download
 
 ## Usage ##
 	Usage: subDomainsBrute.py [options] target.com
